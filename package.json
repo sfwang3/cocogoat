@@ -16,7 +16,8 @@
         "build:singlefile:webpack": "vue-cli-service build --singlefile",
         "preview": "vite preview",
         "lint": "vue-cli-service lint",
-        "postinstall": "git submodule update --init --remote --depth 1",
+        "postinstall": "git submodule update --init --depth 1",
+        "update-data-source": "git submodule update --init --remote --depth 1",
         "update-data": "node --no-warnings=ExperimentalWarning --loader ts-node/esm  scripts/update.mts"
     },
     "dependencies": {

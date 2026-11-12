@@ -70,10 +70,14 @@ addEventListener('install', (event: ExtendableEvent) => {
                 }
                 await cache.add(process.env.BASE_URL + 'index.json')
             }),
-            fetch(new Request(new URL('/', location.href).toString())).then(async (response) => {
+            (async () => {
+                const root = new Request(new URL('/', location.href).toString())
                 const cache = await caches.open(cacheName)
-                return cache.put(new Request(new URL('/', location.href).toString()), response)
-            }),
+                if (await cache.match(root)) return
+                const response = await fetch(root)
+                if (!response.ok) throw new Error(`Entrance returned ${response.status}`)
+                await cache.put(root, response)
+            })(),
         ]),
     )
 })
@@ -205,12 +209,10 @@ registerRoute(
         }
         return !new URL(url).pathname.includes('.')
     },
-    async ({ url, request }): Promise<Response> => {
+    async ({ url }): Promise<Response> => {
         try {
-            // get entrance
-            const response = await fetch(new Request(process.env.VUE_APP_SWENTRANCE))
-            const cache = await caches.open(cacheName)
-            await cache.put(request, response.clone())
+            const response = await fetch(new Request(new URL('/', url).toString(), { cache: 'no-cache' }))
+            if (!response.ok) throw new Error(`Entrance returned ${response.status}`)
             return response
         } catch (e) {
             // fallback to cache
