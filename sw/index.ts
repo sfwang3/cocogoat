@@ -170,8 +170,20 @@ async function rewriteEntrance(response: Response): Promise<Response> {
         })
     }
     const match = html.match(/fetch\((['"])([^'"]*index\.json)\1\)/)
-    if (!match || html.indexOf(match[0]) !== html.lastIndexOf(match[0])) {
-        throw new Error('Entrance does not contain one supported index.json loader request')
+    if (!match) {
+        // The webpack-generated entrance contains direct hashed startup tags,
+        // not the externally deployed dynamic loader. Preserve that format.
+        if (/<script\b[^>]*\bsrc\s*=/.test(html)) {
+            return new Response(html, {
+                status: response.status,
+                statusText: response.statusText,
+                headers: response.headers,
+            })
+        }
+        throw new Error('Entrance has neither a supported loader nor startup scripts')
+    }
+    if (html.indexOf(match[0]) !== html.lastIndexOf(match[0])) {
+        throw new Error('Entrance contains multiple index.json loader requests')
     }
     const rewritten = html.replace(match[0], 'fetch("' + localManifestUrl + '")')
     const headers = new Headers(response.headers)

@@ -125,24 +125,16 @@ export class ServiceWorker {
         const manifestCache = await caches.open('cocogoat-sw-manifest')
         const cachedResources = await manifestCache.match('/_sw/meta/resources')
         const cachedResourcesJson: typeof this.additionalResources = cachedResources ? await cachedResources.json() : {}
-        if (!isEqual(cachedResourcesJson, this.additionalResources)) {
-            const resCache = await caches.open('cocogoat-sw-resources')
-            // get diff
-            const diffKey = reduce(
-                this.additionalResources,
-                function (result, value, key) {
-                    return isEqual(value, cachedResourcesJson[key]) ? result : result.concat(key)
-                },
-                [] as string[],
-            )
-
-            for (const i of diffKey) {
-                resCache.delete(new URL('/_sw/resources/' + i, location.href).toString())
-                console.log('[cocogoat-sw] purged:', diffKey)
-            }
-            // set to cache
-            await manifestCache.put('/_sw/meta/resources', new Response(JSON.stringify(this.additionalResources)))
-        }
+        const changedResources = !isEqual(cachedResourcesJson, this.additionalResources)
+        const diffKey = changedResources
+            ? reduce(
+                  this.additionalResources,
+                  function (result, value, key) {
+                      return isEqual(value, cachedResourcesJson[key]) ? result : result.concat(key)
+                  },
+                  [] as string[],
+              )
+            : []
         const cachedManifest = await manifestCache.match('/_sw/meta/registered')
         if (!cachedManifest && !force) return this.updateCachedManifest()
         const manifest = [
@@ -176,6 +168,15 @@ export class ServiceWorker {
         })
         await Promise.all(promises)
         await this.updateCachedManifest()
+        // Never invalidate the old models or advance their metadata until
+        // every requested resource and the entry manifest have succeeded.
+        if (changedResources) {
+            const resCache = await caches.open('cocogoat-sw-resources')
+            for (const name of diffKey) {
+                await resCache.delete(new URL('/_sw/resources/' + name, location.href).toString())
+            }
+            await manifestCache.put('/_sw/meta/resources', new Response(JSON.stringify(this.additionalResources)))
+        }
     }
     async updateCachedManifest() {
         const path = __webpack_public_path__ + 'index.json'
