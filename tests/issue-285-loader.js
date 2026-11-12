@@ -17,14 +17,16 @@ const newApp = new URL(
     'http://localhost:18765',
 ).pathname
 let release = 'old'
+let failNewApp = true
 let faultHits = 0
+const manifestStatuses = []
 const server = http.createServer((req, res) => {
     const url = new URL(req.url, 'http://localhost:18765').pathname
     if (url === '/' || url.startsWith('/achievement')) {
         res.writeHead(200, { 'Content-Type': 'text/html', 'Cache-Control': 'no-store' })
         return res.end(loader)
     }
-    if (release === 'new' && url === newApp) {
+    if (release === 'new' && failNewApp && url === newApp) {
         faultHits++
         res.writeHead(404)
         return res.end('missing asset')
@@ -54,6 +56,9 @@ const server = http.createServer((req, res) => {
     })
     const context = await browser.newContext()
     const page = await context.newPage()
+    page.on('response', (response) => {
+        if (response.url().includes('/_sw/index.json')) manifestStatuses.push(response.status())
+    })
     try {
         await page.goto('http://localhost:18765/achievement')
         await page.locator('.count').waitFor({ timeout: 30000 })
@@ -72,7 +77,13 @@ const server = http.createServer((req, res) => {
             assert.ok(faultHits > 0, 'fault injection must be reached')
         }
         assert.match(await page.locator('.count').first().innerText(), /1854/)
-        console.log('PASS: incomplete new version retains working old entry')
+        assert.ok(manifestStatuses.includes(200), 'loader must use the Service Worker validated manifest endpoint')
+
+        failNewApp = false
+        await page.reload()
+        await page.locator('.count').waitFor({ timeout: 30000 })
+        assert.match(await page.locator('.count').first().innerText(), /1909/)
+        console.log('PASS: failed new entry falls back to V1; available V2 is activated on the next load')
     } finally {
         await browser.close()
         server.close()

@@ -120,18 +120,8 @@ export class ServiceWorker {
             throw new Error(`${manifestReq.status} ${manifestReq.statusText}`)
         }
         const _manifest = (await manifestReq.json()) as string[]
-        const swCache = await caches.open('cocogoat-sw')
-        const urls = (await swCache.keys())
-            .map((e) => ({ p: new URL(e.url).pathname, r: e }))
-            .filter((e) => e.p.includes('static/'))
-        for (const i of urls) {
-            let u = i.p
-            if (u[0] === '/') u = u.substring(1)
-            if (!_manifest.includes(u)) {
-                swCache.delete(i.r)
-                console.log('[cocogoat-sw] purged:', i.p)
-            }
-        }
+        // Keep content-hashed assets from previous builds. Existing tabs may still
+        // request lazy-loaded chunks after a newer manifest has been selected.
         const manifestCache = await caches.open('cocogoat-sw-manifest')
         const cachedResources = await manifestCache.match('/_sw/meta/resources')
         const cachedResourcesJson: typeof this.additionalResources = cachedResources ? await cachedResources.json() : {}
@@ -185,12 +175,16 @@ export class ServiceWorker {
                 })
         })
         await Promise.all(promises)
-        this.updateCachedManifest()
+        await this.updateCachedManifest()
     }
     async updateCachedManifest() {
         const path = __webpack_public_path__ + 'index.json'
         const manifestCache = await caches.open('cocogoat-sw-manifest')
-        const indexJson = await fetch(path)
-        await manifestCache.put(path, indexJson)
+        const indexJson = await fetch('/_sw/index.json', { cache: 'no-store' })
+        if (!indexJson.ok) {
+            throw new Error(indexJson.status + ' ' + indexJson.statusText)
+        }
+        await manifestCache.put(path, indexJson.clone())
+        await manifestCache.put('/_sw/meta/last-good-index', indexJson)
     }
 }
